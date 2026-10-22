@@ -1,0 +1,173 @@
+@startuml
+title Сиквенс: работа СМО «Сервис распределения заказов Яндекс Такси»\nВариант: ИБ ИЗ1 ПЗ1 Д1ОЗ1 Д1ОО3 Д2П2 Д2Б3 ОР2 ОД2
+
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 200
+skinparam ParticipantPadding 12
+
+participant Simulation
+participant EventCalendar
+participant Source
+participant PlacementDispatcher as PD
+participant Buffer
+participant SelectionDispatcher as SD
+participant Device
+participant Statistic
+
+== HappyFlow: буфер не полон, есть свободный прибор ==
+
+Simulation -> EventCalendar: next()
+EventCalendar --> Simulation: REQUEST_GENERATED
+
+Simulation -> Source: createRequest(t)
+Source --> Simulation: r : Request
+Simulation -> Statistic: recordGenerated(r)
+
+Simulation -> Source: scheduleNext(t)
+Source -> Source: вычислить interval
+note over Source
+  **ИБ, ИЗ1**: бесконечный источник, экспоненциальный закон:
+  interval = -ln(U) / lambda
+end note
+Source -> EventCalendar: schedule(Event REQUEST_GENERATED, t + interval)
+
+Simulation -> PD: put(r, t)
+PD -> Buffer: isFull()
+Buffer --> PD: false
+
+note over PD, Buffer
+  **Д1ОЗ1**: новая заявка встаёт на первое свободное место по кольцу,
+  начиная с указателя буферизации УБ. После постановки УБ = i + 1.
+end note
+loop от УБ по кольцу, пока ячейка занята
+  PD -> Buffer: get(k)
+  Buffer --> PD: Request либо null
+end
+PD -> PD: i = первая свободная ячейка
+PD -> Buffer: put(i, r)
+PD -> PD: УБ = (i + 1)
+PD --> Simulation: null (никого не выбили)
+
+Simulation -> SD: onBufferChanged(t)
+SD -> Buffer: isEmpty()
+Buffer --> SD: false
+
+note over SD, Device
+  **Д2П2**: свободный прибор по кольцу от УП.
+  Прибор выбирается раньше заявки, чтобы УВ не сдвигался, когда свободных приборов нет.
+end note
+loop от УП по кольцу, пока прибор занят
+  SD -> Device: isBusy()
+  Device --> SD: boolean
+end
+SD -> SD: d = первый свободный прибор
+
+note over SD, Buffer
+  **Д2Б3**: ближайшая занятая ячейка по кольцу от УВ.
+end note
+loop от УВ по кольцу, пока ячейка пуста
+  SD -> Buffer: get(k)
+  Buffer --> SD: Request либо null
+end
+SD -> SD: slot = ближайшая занятая ячейка
+SD -> Buffer: remove(slot)
+Buffer --> SD: r : Request
+SD -> SD: УВ = (slot + 1), УП = (d + 1)
+SD -> SD: r.markProcessing(t)
+SD -> Device: startService(r, t)
+Device -> Device: вычислить duration
+note over Device
+  **ПЗ1**: время обслуживания экспоненциальное:
+  duration = -ln(U) / mu
+end note
+Device -> EventCalendar: schedule(Event DEVICE_FINISHED, t + duration)
+
+== Буфер полон, все приборы заняты: отказ (выбивание старой заявки) ==
+
+Simulation -> EventCalendar: next()
+EventCalendar --> Simulation: REQUEST_GENERATED
+
+Simulation -> Source: createRequest(t)
+Source --> Simulation: r : Request
+Simulation -> Statistic: recordGenerated(r)
+
+Simulation -> Source: scheduleNext(t)
+Source -> Source: вычислить interval
+Source -> EventCalendar: schedule(Event REQUEST_GENERATED, t + interval)
+
+Simulation -> PD: put(r, t)
+PD -> Buffer: isFull()
+Buffer --> PD: true
+
+note over PD, Buffer
+  **Д1ОО3**: при переполнении выбивается самая старая заявка (min timeCreated),
+  новая заявка записывается на её место.
+end note
+
+PD --> PD: findOldest() : i
+PD -> Buffer: remove(i)
+Buffer --> PD: old : Request
+PD -> PD: old.markRefused()
+PD -> Buffer: put(i, r)
+PD -> PD: УБ = (i + 1)
+PD --> Simulation: old : Request (выбитая заявка)
+Simulation -> Statistic: recordRejected(old)
+
+Simulation -> SD: onBufferChanged(t)
+SD -> Buffer: isEmpty()
+Buffer --> SD: false
+
+loop от УП по кольцу
+  SD -> Device: isBusy()
+  Device --> SD: true
+end
+SD -> SD: d = null (все приборы заняты)
+
+note over SD
+  Приборы не отказывают, они только заняты. Заявка остаётся в буфере
+  до события DEVICE_FINISHED. УВ и УП не меняются.
+end note
+
+== Освободился один прибор: выдача одной заявки на обработку ==
+
+Simulation -> EventCalendar: next()
+EventCalendar --> Simulation: DEVICE_FINISHED
+
+Simulation -> Device: finishService(t)
+Device -> Device: r.markCompleted()
+Device --> Simulation: r : Request
+Simulation -> Device: getId()
+Device --> Simulation: id
+Simulation -> Statistic: recordServiceFinish(r, id, t)
+
+Simulation -> SD: onDeviceFreed(t)
+SD -> Buffer: isEmpty()
+Buffer --> SD: false
+
+note over SD, Device
+  **Д2П2**: свободный прибор по кольцу от УП.
+end note
+loop от УП по кольцу, пока прибор занят
+  SD -> Device: isBusy()
+  Device --> SD: boolean
+end
+SD -> SD: d = освободившийся прибор
+
+note over SD, Buffer
+  **Д2Б3**: ближайшая занятая ячейка по кольцу от УВ.
+end note
+loop от УВ по кольцу, пока ячейка пуста
+  SD -> Buffer: get(k)
+  Buffer --> SD: Request либо null
+end
+SD -> SD: slot = ближайшая занятая ячейка
+SD -> Buffer: remove(slot)
+Buffer --> SD: r : Request
+SD -> SD: УВ = (slot + 1), УП = (d + 1)
+SD -> SD: r.markProcessing(t)
+SD -> Device: startService(r, t)
+Device -> Device: вычислить duration (ПЗ1)
+Device -> EventCalendar: schedule(Event DEVICE_FINISHED, t + duration)
+
+@enduml
