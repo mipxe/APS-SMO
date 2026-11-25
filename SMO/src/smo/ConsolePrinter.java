@@ -5,9 +5,7 @@ import java.util.Locale;
 public class ConsolePrinter {
     public static boolean SHOW_CALENDAR = true;
 
-    private static String f(double v) {
-        return String.format(Locale.US, "%.4f", v);
-    }
+    private static String f(double v) { return String.format(Locale.US, "%.4f", v); }
 
     public static void printStep(StepRecord s) {
         StringBuilder sb = new StringBuilder();
@@ -63,23 +61,43 @@ public class ConsolePrinter {
 
     public static void printSummary(SummaryTable t) {
         int nSrc = t.generated().length - 1;
-        System.out.println("\n==================== ИТОГОВАЯ СВОДНАЯ ТАБЛИЦА (ОР2) ====================");
-        System.out.println("Время моделирования: " + f(t.tEnd()));
-        System.out.println();
-        System.out.printf(Locale.US, "%-8s %9s %8s %9s %9s %10s %10s %10s %10s %10s%n",
-                "Источник", "Создано", "Отказов", "Обслужено", "P отказа",
-                "T преб.", "T ожид.", "T обсл.", "D ожид.", "D обсл.");
+        System.out.println("\n==================== ИТОГОВЫЕ ТАБЛИЦЫ (ОР2) ====================");
+        System.out.println("Общее время реализации: " + f(t.tEnd()));
+        System.out.println("Всего заявок: " + t.generated()[nSrc] + ", отказов: " + t.rejected()[nSrc]
+                + ", обслужено: " + t.processed()[nSrc]);
+
+        System.out.println("\nТаблица 1. Характеристики источников ВС");
+        System.out.printf(Locale.US, "%-10s %8s %9s %10s %10s %10s %10s %10s%n",
+                "№ источн.", "Заявок", "P отк", "T преб", "T БП", "T обсл", "D БП", "D обсл");
         for (int i = 0; i <= nSrc; i++) {
             String name = i == nSrc ? "ИТОГО" : "И" + i;
-            System.out.printf(Locale.US, "%-8s %9d %8d %9d %9.4f %10.4f %10.4f %10.4f %10.4f %10.4f%n",
-                    name, t.generated()[i], t.rejected()[i], t.processed()[i], t.rejectProbability()[i],
-                    t.avgSystem()[i], t.avgWait()[i], t.avgService()[i], t.waitVariance()[i], t.serviceVariance()[i]);
+            System.out.printf(Locale.US, "%-10s %8d %9.4f %10.4f %10.4f %10.4f %10.4f %10.4f%n",
+                    name, t.generated()[i], t.rejectProbability()[i], t.avgSystem()[i], t.avgWait()[i],
+                    t.avgService()[i], t.waitVariance()[i], t.serviceVariance()[i]);
         }
-        System.out.println();
-        System.out.println("Коэффициент использования приборов:");
+
+        System.out.println("\nТаблица 2. Характеристики приборов ВС");
+        System.out.printf(Locale.US, "%-10s %s%n", "№ прибора", "Коэффициент использования");
         for (int i = 0; i < t.deviceLoad().length; i++) {
-            System.out.printf(Locale.US, "  П%d: %.4f%n", i, t.deviceLoad()[i]);
+            System.out.printf(Locale.US, "%-10s %.4f%n", "П" + i, t.deviceLoad()[i]);
         }
-        System.out.println("\nT преб. = T ожид. + T обсл. (по обслуженным заявкам); D - дисперсия.");
+        System.out.println("\nT преб = T БП + T обсл (по обслуженным заявкам); T БП - время в буфере; D - дисперсия.");
+    }
+
+    public static void printAutoIterations(AutoMode.Result r) {
+        System.out.println("\n==================== ПОДБОР ЧИСЛА ЗАЯВОК N ====================");
+        System.out.printf(Locale.US,
+                "Формула: N = t^2 (1 - p) / (d^2 p), t = %.3f, d = %.1f; условие точности |p_пред - p| < d * p_пред%n",
+                AutoMode.T_ALPHA, AutoMode.DELTA);
+        System.out.printf(Locale.US, "%-6s %10s %10s %12s %12s %s%n",
+                "Итер.", "N", "P отк", "|dP|", "d*P_пред", "Точность");
+        for (AutoMode.Iteration it : r.iterations) {
+            String diff = Double.isNaN(it.diff()) ? "-" : f(it.diff());
+            String thr = Double.isNaN(it.threshold()) ? "-" : f(it.threshold());
+            String ok = it.index() == 0 ? "(пристрелка)" : (it.accurate() ? "достигнута" : "нет");
+            System.out.printf(Locale.US, "%-6d %10d %10.4f %12s %12s %s%n", it.index(), it.n(), it.p(), diff, thr, ok);
+        }
+        if (r.converged) System.out.println("Заданная точность достигнута при N = " + r.finalN + ".");
+        if (!r.note.isEmpty()) System.out.println(r.note);
     }
 }

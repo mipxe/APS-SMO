@@ -17,12 +17,15 @@ public class Event {
     public double getTime() {
         return time;
     }
+
     public EventType getType() {
         return type;
     }
+
     public Source getSource() {
         return source;
     }
+
     public Device getDevice() {
         return device;
     }

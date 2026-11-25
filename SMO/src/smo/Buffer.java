@@ -35,8 +35,8 @@ public class Buffer {
     }
 
     public boolean isEmpty() {
-        for (Request r : slots) if (r != null) return true;
-        return false;
+        for (Request r : slots) if (r != null) return false;
+        return true;
     }
 
     public Request[] snapshot() {

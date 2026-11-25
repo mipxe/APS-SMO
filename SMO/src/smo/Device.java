@@ -20,12 +20,15 @@ public class Device {
     public int getId() {
         return id;
     }
+
     public boolean isBusy() {
         return currentRequest != null;
     }
+
     public Request getCurrentRequest() {
         return currentRequest;
     }
+
     public double getBusyUntil() {
         return busyUntil;
     }

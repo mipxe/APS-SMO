@@ -35,7 +35,7 @@ public class SelectionDispatcher {
     }
 
     private void dispatch(double t) {
-        while (buffer.isEmpty()) {
+        while (!buffer.isEmpty()) {
             Device d = selectDevice();
             if (d == null) break;
             Request r = selectRequest();
@@ -49,7 +49,7 @@ public class SelectionDispatcher {
                     + " (конец обслуживания t=" + String.format(java.util.Locale.US, "%.4f", d.getBusyUntil())
                     + "); УВ " + oldPb + "->" + selectPointer + ", УП " + oldPp + "->" + devicePointer);
         }
-        if (buffer.isEmpty()) {
+        if (!buffer.isEmpty()) {
             logger.accept("Все приборы заняты, заявки ждут в буфере; УВ и УП не изменились");
         }
     }
